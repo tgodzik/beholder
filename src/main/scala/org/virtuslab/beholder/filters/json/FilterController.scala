@@ -10,7 +10,7 @@ import play.api.libs.json.JsValue
  */
 abstract class FilterController[Entity <: Product](filter: FilterAPI[Entity, JsonFormatter[Entity]]) extends Controller {
 
-  protected def inSession[T](body: Request[AnyContent] => Session => Option[JsValue]): Action[T]
+  def inSession(body: Request[AnyContent] => Session => Option[JsValue]): EssentialAction
 
   final def filterDefinition = inSession { request =>
     _ =>
