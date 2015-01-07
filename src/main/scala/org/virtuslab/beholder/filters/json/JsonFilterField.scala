@@ -1,8 +1,10 @@
 package org.virtuslab.beholder.filters.json
 
+import org.joda.time.DateTime
 import org.virtuslab.beholder.filters._
 import org.virtuslab.beholder.utils.ILikeExtension._
 import org.virtuslab.unicorn.LongUnicornPlay.driver.simple._
+import org.virtuslab.unicorn.LongUnicornPlay.CustomTypeMappers._
 import play.api.libs.functional.syntax._
 import play.api.libs.json.{ JsArray, JsObject, JsString, _ }
 
@@ -68,6 +70,13 @@ object JsonFilterFields {
    */
   object inOptionText extends ImplicitlyJsonFilterFiled[Option[String], String]("OptionalText") {
     override def filterOnColumn(column: Column[Option[String]])(data: String): Column[Option[Boolean]] = column ilike s"%${escape(data)}%"
+  }
+
+  /**
+   * search in dateTime
+   */
+  object inDateTime extends ImplicitlyJsonFilterFiled[DateTime, DateTime]("DateTime") {
+    override def filterOnColumn(column: Column[DateTime])(data: DateTime): Column[Option[Boolean]] = column === data
   }
 
   /**
