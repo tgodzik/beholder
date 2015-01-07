@@ -3,7 +3,7 @@ package org.virtuslab.beholder.filters.json
 import org.virtuslab.beholder.filters.{ FilterDefinition, FilterAPI }
 import play.api.mvc._
 import org.virtuslab.unicorn.LongUnicornPlay.driver.simple.Session
-import play.api.libs.json.JsValue
+import play.api.libs.json.{ JsString, JsValue }
 
 /**
  * Author: Krzysztof Romanowski
@@ -20,7 +20,7 @@ abstract class FilterController[Entity <: Product](filter: FilterAPI[Entity, Jso
   //for filter modification such us setting default parameters etc.
   protected def mapFilterData(data: FilterDefinition) = data
 
-  final def doFilter =
+  final def doFilter: EssentialAction =
     inSession {
       request =>
         implicit session =>
@@ -28,6 +28,7 @@ abstract class FilterController[Entity <: Product](filter: FilterAPI[Entity, Jso
             json <- request.body.asJson
             filterDefinition <- filter.formatter.filterDefinition(json)
             data = filter.filter(mapFilterData(filterDefinition))
-          } yield filter.formatter.results(filterDefinition, data)
+            totalResults = filter.totalResults(mapFilterData(filterDefinition))
+          } yield filter.formatter.results(filterDefinition, data, totalResults)
     }
 }

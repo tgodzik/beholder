@@ -99,6 +99,18 @@ abstract class BaseFilter[Id, Entity, Table <: BaseView[Id, Entity], FieldType <
     afterSkip.to(TypedCollectionTypeConstructor.forArray).list
   }
 
+  final override def totalResults(data: FilterDefinition)(implicit session: Session): Int = {
+    table.filter(filters(data.data))
+      .sortBy {
+        inQueryTable =>
+          val globalColumns =
+            order(data)(inQueryTable).map {
+              case (column, asc) => if (asc) column.asc else column.desc
+            }.toSeq.flatMap(_.columns)
+          new Ordered(globalColumns ++ inQueryTable.id.asc.columns)
+      }.length.run
+  }
+
   //ordering
   private def order(data: FilterDefinition)(table: Table): Option[(Column[_], Boolean)] =
     data.orderBy.map { case order => (table.columnByName(order.column), order.asc) }
@@ -106,6 +118,8 @@ abstract class BaseFilter[Id, Entity, Table <: BaseView[Id, Entity], FieldType <
 
 trait FilterAPI[Entity, Formatter] {
   def filter(data: FilterDefinition)(implicit session: Session): Seq[Entity]
+
+  def totalResults(data: FilterDefinition)(implicit session: Session): Int
 
   def emptyFilterData: FilterDefinition
 
