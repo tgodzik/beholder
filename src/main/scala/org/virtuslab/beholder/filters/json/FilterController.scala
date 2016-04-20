@@ -1,60 +1,55 @@
 package org.virtuslab.beholder.filters.json
 
-import org.virtuslab.beholder.filters.{ ContextedFilterAPI, FilterAPI, FilterDefinition, FilterResult }
-import org.virtuslab.unicorn.LongUnicornPlay.driver.api.Session
-import play.api.libs.json.{ JsSuccess, JsResult, JsError, JsValue }
+import org.virtuslab.beholder.filters.{ FilterAPI, FilterDefinition, FilterResult }
+import org.virtuslab.unicorn.LongUnicornPlay.driver.api._
+import play.api.libs.json._
 import play.api.mvc._
+import slick.dbio.DBIO
 
-trait FilterControllerBase[Context, Entity <: Product] extends Controller {
+import scala.concurrent.{ Future, ExecutionContext }
+
+trait FilterControllerBase[Entity <: Product] extends Controller {
   private[beholder] def formatter: JsonFormatter[Entity]
 
-  private[beholder] def callFilter(context: Context, filterDefinition: FilterDefinition): FilterResult[Entity]
+  private[beholder] def callFilter(filterDefinition: FilterDefinition): DBIO[FilterResult[Entity]]
 
-  protected def inFilterContext(body: Request[AnyContent] => Context => JsResult[JsValue]): EssentialAction
+  implicit def executionContext: ExecutionContext
 
-  final def filterDefinition = inFilterContext { request => _ => JsSuccess(formatter.jsonDefinition) }
+  protected def inFilterContext(body: Request[AnyContent] => DBIO[JsResult[JsValue]]): EssentialAction
+
+  final def filterDefinition = inFilterContext { request => DBIO.successful(JsSuccess(formatter.jsonDefinition)) }
 
   final def doFilter: EssentialAction =
     inFilterContext {
       request =>
-        context =>
-          request.body.asJson.map(formatter.filterDefinition).map { fd =>
-            fd.map {
-              filterDefinition =>
-                val filterResult = callFilter(context, mapFilterData(filterDefinition, context))
-                formatter.results(filterDefinition, modifyFilterResults(filterResult, filterDefinition, context))
+        request.body.asJson.map(formatter.filterDefinition).map {
+          case JsSuccess(filterDefinition, path) =>
+            val filterResultAction = callFilter(mapFilterData(filterDefinition))
+            filterResultAction.map {
+              filterResult =>
+                val formatResults = formatter.results(filterDefinition, modifyFilterResults(filterResult, filterDefinition))
+                JsSuccess(formatResults, path)
             }
-          }.getOrElse(JsError("json expected"))
+
+          case other =>
+            DBIO.successful(JsError("json expected"))
+        }.getOrElse(DBIO.successful(JsError("json expected")))
     }
 
   //for filter modification such us setting default parameters etc.
-  protected def mapFilterData(data: FilterDefinition, context: Context) = data
+  protected def mapFilterData(data: FilterDefinition) = data
 
   //for result modification such as sorting or fetching additional data
-  protected def modifyFilterResults(results: FilterResult[Entity], filterDefinition: FilterDefinition, context: Context) = results
+  protected def modifyFilterResults(results: FilterResult[Entity], filterDefinition: FilterDefinition) = results
 }
 
 abstract class FilterController[Entity <: Product](filter: FilterAPI[Entity, JsonFormatter[Entity]])
-    extends FilterControllerBase[Session, Entity] {
+    extends FilterControllerBase[Entity] {
 
-  protected def inSession(body: Request[AnyContent] => Session => JsResult[JsValue]): EssentialAction
+  override protected def inFilterContext(body: (Request[AnyContent]) => DBIO[JsResult[JsValue]]): EssentialAction
 
-  override protected def inFilterContext(body: (Request[AnyContent]) => (Session) => JsResult[JsValue]): EssentialAction =
-    inSession(body)
-
-  override final private[beholder] def callFilter(session: Session, filterDefinition: FilterDefinition): FilterResult[Entity] =
-    filter.filterWithTotalEntitiesNumber(filterDefinition)(session)
+  override final private[beholder] def callFilter(filterDefinition: FilterDefinition): DBIO[FilterResult[Entity]] =
+    filter.filterWithTotalEntitiesNumber(filterDefinition)
 
   override final private[beholder] def formatter: JsonFormatter[Entity] = filter.formatter
-}
-
-abstract class ContextFilterController[Context, Entity <: Product](contextedFilter: ContextedFilterAPI[Context, Entity, JsonFormatter[Entity]])
-    extends FilterControllerBase[Context, Entity] {
-  override private[beholder] final def formatter: JsonFormatter[Entity] = contextedFilter.filterFormatter
-
-  override private[beholder] final def callFilter(context: Context, filterDefinition: FilterDefinition): FilterResult[Entity] = {
-    contextedFilter.apply(context).filterWithTotalEntitiesNumber(filterDefinition)(sessionFromContext(context))
-  }
-
-  protected def sessionFromContext(context: Context): Session
 }
